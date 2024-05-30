@@ -79,7 +79,7 @@
         // Example usage:
         // const lispStatement = "(progn (= a (+ b c)) (= b (- a c)) (= c (- a b)) )";
         // const lispStatement = "(= a (+ b c))";
-        const lispStatement = "(= (a) (- b (if (< c d) e f)))";
+        const lispStatement = "(= a (- b (if (< c d) e f)))";
         const jsonHierarchy = lispToJson(lispStatement);
         // console.log(JSON.stringify(jsonHierarchy, null, 2));
 
