@@ -6,6 +6,12 @@
     <title>Formula Tree</title>
     <script src="https://d3js.org/d3.v6.min.js"></script>
     <style>
+        #inputBox {
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
         .node circle {
             fill: #fff;
             stroke: #000;
@@ -27,116 +33,166 @@
 </head>
 
 <body>
+    <input type="text" id="inputBox" placeholder="Type something...">
     <script>
 
-        function lispToJson(lisp) {
-            function parse(tokens) {
-                if (!tokens.length) {
-                    throw new Error("Unexpected end of input");
+        // Example usage:
+        // const defaultStatement = "(progn (= a (+ b c)) (= b (- a c)) (= c (- a b)) )";
+        // const defaultStatement = "(= a (+ b c))";
+        // const defaultStatement = "(= a (- b (if (< c d) e f)))"
+        const defaultStatement = "(= a (- b (if (< c d) e f)))";
+
+        const inputBox = document.getElementById('inputBox');
+
+        inputBox.value = defaultStatement;
+
+        inputBox.addEventListener('input', function () {
+            if (inputBox) {
+                const input = inputBox.value;
+                if (input) {
+                    d3.select('svg').remove()
+                    draw(input)
                 }
+            }
+        });
 
-                let token = tokens.shift();
+        function draw(lispStatement) {
 
-                if (token === '(') {
-                    let list = [];
-                    while (tokens[0] !== ')') {
-                        list.push(parse(tokens));
+            function lispToJson(lisp) {
+                function parse(tokens) {
+                    if (!tokens.length) {
+                        // throw new Error("Unexpected end of input");
+                        return null;
                     }
-                    tokens.shift(); // discard the closing ')'
-                    return list;
-                } else if (token === ')') {
-                    throw new Error("Unexpected )");
-                } else {
-                    return token;
+
+                    let token = tokens.shift();
+
+                    if (!token) {
+                        return null;
+                    }
+
+                    if (token.length == 0) {
+                        return null;
+                    }
+
+                    if (token === '(') {
+                        let list = [];
+                        while (tokens[0] !== ')') {
+                            let el = parse(tokens)
+                            if (el == null) {
+                                return null;
+                            }
+                            list.push(el);
+                        }
+                        tokens.shift(); // discard the closing ')'
+                        return list;
+                    } else if (token === ')') {
+                        throw new Error("Unexpected )");
+                    } else {
+                        return token;
+                    }
                 }
-            }
 
-            function tokenize(str) {
-                return str.replace(/\(/g, ' ( ')
-                    .replace(/\)/g, ' ) ')
-                    .trim()
-                    .split(/\s+/);
-            }
-
-            let tokens = tokenize(lisp);
-            let parsed = parse(tokens);
-
-            function convertToHierarchy(parsed) {
-                if (typeof parsed === 'string') {
-                    return { name: parsed };
+                function tokenize(str) {
+                    return str.replace(/\(/g, ' ( ')
+                        .replace(/\)/g, ' ) ')
+                        .trim()
+                        .split(/\s+/);
                 }
 
-                let [head, ...tail] = parsed;
-                return {
-                    name: head,
-                    children: tail.map(convertToHierarchy)
-                };
+                let tokens = tokenize(lisp);
+                let parsed = parse(tokens);
+
+                function isIterable(variable) {
+                    return variable != null && typeof variable[Symbol.iterator] === 'function';
+                }
+
+                function convertToHierarchy(parsed) {
+                    if (typeof parsed === 'string') {
+                        return { name: parsed };
+                    }
+
+                    if (isIterable(parsed)) {
+                        let [head, ...tail] = parsed;
+                        return {
+                            name: head,
+                            children: tail.map(convertToHierarchy)
+                        };
+                    }
+
+                    return null;
+
+                }
+
+                return convertToHierarchy(parsed);
             }
 
-            return convertToHierarchy(parsed);
+            ;
+            const jsonHierarchy = lispToJson(lispStatement);
+            if (jsonHierarchy == null) {
+                return;
+            }
+            // console.log(JSON.stringify(jsonHierarchy, null, 2));
+
+            // Define the tree data
+            const data = jsonHierarchy;
+
+            // --------------------------------
+
+            // Set the dimensions and margins of the diagram
+            const margin = { top: 80, right: 90, bottom: 30, left: 90 },
+                width = 960 - margin.left - margin.right,
+                height = 500 - margin.top - margin.bottom;
+
+            // Append the svg object to the body of the page
+            const svg = d3.select("body").append("svg")
+                .attr("width", width + margin.right + margin.left)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", "translate("
+                    + margin.left + "," + margin.top + ")");
+
+            const root = d3.hierarchy(data);
+
+            const treeLayout = d3.tree().size([width, height]);
+
+            treeLayout(root);
+
+            // Adds the links between the nodes
+            svg.selectAll('.link')
+                .data(root.descendants().slice(1))
+                .enter().append('path')
+                .attr('class', 'link')
+                .attr('d', d => {
+                    return "M" + d.x + "," + d.y
+                        + "C" + d.x + "," + (d.y + d.parent.y) / 2
+                        + " " + d.parent.x + "," + (d.y + d.parent.y) / 2
+                        + " " + d.parent.x + "," + d.parent.y;
+                });
+
+            // Adds each node as a group
+            const node = svg.selectAll('.node')
+                .data(root.descendants())
+                .enter().append('g')
+                .attr('class', d => 'node' +
+                    (d.children ? ' node--internal' : ' node--leaf'))
+                .attr('transform', d => 'translate(' + d.x + ',' + d.y + ')');
+
+            // Adds the circle to the node
+            node.append('circle')
+                .attr('r', 20);
+
+            // Adds the text to the node
+            node.append('text')
+                .attr('dy', '.35em')
+                .text(d => d.data.name);
+
         }
 
-        // Example usage:
-        // const lispStatement = "(progn (= a (+ b c)) (= b (- a c)) (= c (- a b)) )";
-        // const lispStatement = "(= a (+ b c))";
-        const lispStatement = "(= a (- b (if (< c d) e f)))";
-        const jsonHierarchy = lispToJson(lispStatement);
-        // console.log(JSON.stringify(jsonHierarchy, null, 2));
-
-        // Define the tree data
-        const data = jsonHierarchy;
-
-        // --------------------------------
-
-        // Set the dimensions and margins of the diagram
-        const margin = { top: 80, right: 90, bottom: 30, left: 90 },
-            width = 960 - margin.left - margin.right,
-            height = 500 - margin.top - margin.bottom;
-
-        // Append the svg object to the body of the page
-        const svg = d3.select("body").append("svg")
-            .attr("width", width + margin.right + margin.left)
-            .attr("height", height + margin.top + margin.bottom)
-            .append("g")
-            .attr("transform", "translate("
-                + margin.left + "," + margin.top + ")");
-
-        const root = d3.hierarchy(data);
-
-        const treeLayout = d3.tree().size([width, height]);
-
-        treeLayout(root);
-
-        // Adds the links between the nodes
-        svg.selectAll('.link')
-            .data(root.descendants().slice(1))
-            .enter().append('path')
-            .attr('class', 'link')
-            .attr('d', d => {
-                return "M" + d.x + "," + d.y
-                    + "C" + d.x + "," + (d.y + d.parent.y) / 2
-                    + " " + d.parent.x + "," + (d.y + d.parent.y) / 2
-                    + " " + d.parent.x + "," + d.parent.y;
-            });
-
-        // Adds each node as a group
-        const node = svg.selectAll('.node')
-            .data(root.descendants())
-            .enter().append('g')
-            .attr('class', d => 'node' +
-                (d.children ? ' node--internal' : ' node--leaf'))
-            .attr('transform', d => 'translate(' + d.x + ',' + d.y + ')');
-
-        // Adds the circle to the node
-        node.append('circle')
-            .attr('r', 20);
-
-        // Adds the text to the node
-        node.append('text')
-            .attr('dy', '.35em')
-            .text(d => d.data.name);
+        draw(defaultStatement);
 
     </script>
+
 </body>
 
 </html>
